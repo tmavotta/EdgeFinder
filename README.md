@@ -157,7 +157,7 @@ f_fractional = f* × 0.25
 ### Frontend
 
 ```bash
-git clone https://github.com/yourusername/edgefinder
+git clone https://github.com/tmavotta/EdgeFinder
 cd edgefinder
 npm install
 ```
