@@ -57,7 +57,7 @@ Every decimal odd `d` offered by a sportsbook implies a probability:
 P_implied = 1 / d
 ```
 
-Sportsbooks build in a margin (the "vig" or "juice") by pricing odds so that the sum of all implied probabilities exceeds 1. For example, a fair coin-flip would be priced at 2.0/2.0 (50%/50%), but books price it at 1.91/1.91 (52.4%/52.4%), giving a 4.8% margin.
+Sportsbooks build in a margin (the "vig" or "juice") by pricing odds so that the sum of all implied probabilities exceeds 1. For example, a fair coin-flip would be priced at 2.0/2.0 (50% Heads/50% Tails), but books price it at 1.91/1.91 (52.4% Heads/52.4% Tails), giving a 4.8% margin.
 
 ### 2. Arbitrage Detection
 
@@ -76,7 +76,7 @@ Stake_i = Total × (P_i / ∑P_j)
 
 This guarantees an equal payout regardless of which outcome occurs.
 
-### 3. Devigging — Estimating True Probability
+### 3. Devigging : Estimating True Probability
 
 To find +EV bets, we need a "true" probability baseline unaffected by the book's margin. The system deviggs each book's odds by normalising their implied probabilities to sum to 1:
 
@@ -113,7 +113,7 @@ Where:
 - `p` = true probability of winning
 - `q` = 1 − p (probability of losing)
 
-A full Kelly bet maximises expected log-wealth but has high variance. EdgeFinder applies **fractional Kelly (25%)** to reduce the risk of ruin while preserving the growth advantage:
+A full Kelly bet maximises expected log-wealth but has high variance. EdgeFinder applies **fractional Kelly (25%)** to reduce the risk of losing everything while preserving the growth advantage:
 
 ```
 f_fractional = f* × 0.25
@@ -180,11 +180,9 @@ pip install fastapi uvicorn httpx
 uvicorn main:app --reload --port 8000
 ```
 
-The backend auto-starts its ingestion loop on startup and begins storing data immediately.
+The backend auto-starts its ingestion loop on startup and begins storing data immediately, but keep in mind with a free OddsAPI plan you only get 500 requests/month.
 
-Then in `src/EdgeFinder.jsx` set:
-```js
-const USE_BACKEND = true;
+
 ```
 
 ---
