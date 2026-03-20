@@ -183,7 +183,7 @@ uvicorn main:app --reload --port 8000
 The backend auto-starts its ingestion loop on startup and begins storing data immediately, but keep in mind with a free OddsAPI plan you only get 500 requests/month.
 
 
-```
+
 
 ---
 
