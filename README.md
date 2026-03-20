@@ -1,4 +1,4 @@
-# ⚡ EdgeFinder — Real-Time Sports Betting Market Analysis Engine
+# ⚡ EdgeFinder : Real-Time Sports Betting Market Analysis Engine
 
 A full-stack application that continuously ingests live odds from multiple sportsbooks, normalises them into implied probabilities, and applies quantitative models to identify market inefficiencies in real time.
 
@@ -11,12 +11,12 @@ A full-stack application that continuously ingests live odds from multiple sport
 
 ## Overview
 
-Sports betting markets are one of the most data-rich, fast-moving financial environments accessible to the public. Across dozens of sportsbooks, prices (odds) on the same event differ slightly — and those differences encode information. This project builds an engine that reads those differences, converts them into a unified probabilistic framework, and surfaces two categories of opportunity:
+Sports betting markets are one of the most data-rich, fast-moving financial environments accessible to the public. Across dozens of sportsbooks, prices (odds) on the same event differ slightly, and those differences encode information. This project builds an engine that reads those differences, converts them into a unified probabilistic framework, and surfaces two categories of opportunity:
 
 - **Arbitrage** — a set of bets across different books that guarantees profit regardless of outcome
 - **Positive Expected Value (+EV)** — individual bets where the true probability of winning exceeds what the book's odds imply
 
-The system runs continuously, stores all detections historically, and presents findings in a mobile-first dashboard that updates in near real time.
+The system runs continuously, stores all detections historically, and presents findings in a mobile-first dashboard that updates every 90s.
 
 ---
 
@@ -41,7 +41,9 @@ The system runs continuously, stores all detections historically, and presents f
 └──────────────────┘        └───────────────────┘
 ```
 
-The backend fetches odds independently of the frontend on a configurable interval, meaning the analysis engine runs 24/7 on a server while the frontend is purely a display layer.
+The backend fetches odds independently of the frontend on a configurable interval. The free tier of The Odds API includes 500 requests per month, 
+which is sufficient for periodic analysis sessions. With a paid plan that supports higher request volumes, the analysis engine can run continuously 
+24/7 on a server while the frontend acts purely as a display layer.
 
 ---
 
