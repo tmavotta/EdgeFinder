@@ -4,9 +4,7 @@ import {
   CartesianGrid, ScatterChart, Scatter, Cell
 } from "recharts";
 
-const USE_BACKEND = true;
 const BACKEND = "http://localhost:8000";
-const API_KEY = import.meta.env.VITE_ODDS_API_KEY;
 const REFRESH_INTERVAL = 90000;
 
 const SPORTS_CONFIG = [
@@ -407,23 +405,22 @@ export default function EdgeFinder() {
     setCountdown(REFRESH_INTERVAL / 1000);
     const allEvents = [];
     const log = [];
-    for (const sport of SPORTS_CONFIG) {
-      try {
-        const target = `https://api.the-odds-api.com/v4/sports/${sport.key}/odds/?apiKey=${API_KEY}&regions=us,eu,uk&markets=h2h&oddsFormat=decimal`;
-        const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(target)}`);
-        const rem = res.headers.get("x-requests-remaining");
-        if (rem !== null) setRemaining(parseInt(rem));
-        if (res.ok) {
-          const data = await res.json();
-          allEvents.push(...data);
-          log.push({ sport: sport.label, key: sport.key, count: data.length, ok: true });
-        } else {
-          const err = await res.json().catch(() => ({}));
-          log.push({ sport: sport.label, key: sport.key, ok: false, msg: err.message || res.statusText });
+    try {
+      await fetch(`${BACKEND}/refresh`, { method: "POST" }).catch(() => {});
+      const res = await fetch(`${BACKEND}/events`);
+      if (res.ok) {
+        const data = await res.json();
+        allEvents.push(...data.events);
+        setRemaining(data.requests_remaining ?? null);
+        for (const sport of SPORTS_CONFIG) {
+          const count = data.events.filter(e => e.sport_key === sport.key).length;
+          log.push({ sport: sport.label, key: sport.key, count, ok: true });
         }
-      } catch (e) {
-        log.push({ sport: sport.label, key: sport.key, ok: false, msg: e.message });
+      } else {
+        log.push({ sport: "backend", key: "all", ok: false, msg: `HTTP ${res.status} from ${BACKEND}` });
       }
+    } catch (e) {
+      log.push({ sport: "backend", key: "all", ok: false, msg: `Could not reach backend at ${BACKEND}: ${e.message}` });
     }
     setEvents(allEvents);
     setFetchLog(log);
@@ -491,7 +488,7 @@ export default function EdgeFinder() {
           <div style={{ textAlign: "right" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "flex-end" }}>
               <div style={{ width: 7, height: 7, borderRadius: "50%", background: refreshing ? C.amber : C.green, animation: "ef-pulse 2s infinite" }} />
-              <span style={{ fontSize: 11, color: C.textDim, letterSpacing: "0.08em" }}>{USE_BACKEND ? "BACKEND" : "LIVE"}</span>
+              <span style={{ fontSize: 11, color: C.textDim, letterSpacing: "0.08em" }}>BACKEND</span>
             </div>
             {remaining !== null && <div style={{ fontSize: 10, color: remaining < 50 ? C.red : C.textMuted, marginTop: 3, fontFamily: MONO }}>{remaining} req left</div>}
           </div>

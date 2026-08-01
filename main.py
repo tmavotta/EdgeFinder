@@ -383,6 +383,7 @@ def get_events(sport: Optional[str] = None):
     return {
         "count": len(events),
         "last_fetched": last_fetched,
+        "requests_remaining": requests_remaining,   # ← add this line
         "events": events,
     }
 
