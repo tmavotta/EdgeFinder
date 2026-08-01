@@ -14,10 +14,14 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
-
+from dotenv import load_dotenv
+load_dotenv()
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-API_KEY = "96e8765708deab40a932e294c9aa3b4f"
+import os
+API_KEY = os.environ.get("ODDS_API_KEY")
+if not API_KEY:
+    raise RuntimeError("Set the ODDS_API_KEY environment variable (e.g. in a .env file)")
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 FETCH_INTERVAL = 90  # seconds between auto-refreshes
 
