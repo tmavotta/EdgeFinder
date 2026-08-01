@@ -39,7 +39,8 @@ SPORTS = [
 # ─── Database ─────────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = sqlite3.connect("edgefinder.db")
+    conn = sqlite3.connect("edgefinder.db", timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -114,6 +115,8 @@ def dt_prob(decimal_odds: float) -> float:
 def to_american(decimal_odds: float) -> str:
     if decimal_odds >= 2:
         return f"+{round((decimal_odds - 1) * 100)}"
+    if decimal_odds <= 1:
+        return "N/A"
     return str(round(-100 / (decimal_odds - 1)))
 
 def kelly_fraction(true_prob: float, decimal_odds: float, fraction: float = 0.25) -> float:
@@ -286,10 +289,18 @@ async def fetch_all_odds():
                     (sport, 0, 0, str(e)[:200], datetime.now(timezone.utc).isoformat())
                 )
 
+    # Save events immediately so a downstream analytics error can't leave the API empty
+    all_events = events
+    last_fetched = datetime.now(timezone.utc).isoformat()
+
     # Save detected arbs and EV bets to history
     now = datetime.now(timezone.utc).isoformat()
-    arbs = compute_arbs(events)
-    ev_bets = compute_ev(events, min_ev=0.02)
+    try:
+        arbs = compute_arbs(events)
+        ev_bets = compute_ev(events, min_ev=0.02)
+    except Exception as e:
+        print(f"[{now}] Analytics computation failed: {e}")
+        arbs, ev_bets = [], []
 
     for a in arbs:
         conn.execute(
@@ -313,8 +324,6 @@ async def fetch_all_odds():
     conn.commit()
     conn.close()
 
-    all_events = events
-    last_fetched = datetime.now(timezone.utc).isoformat()
     print(f"[{last_fetched}] Fetched {len(events)} events across {len(SPORTS)} sports")
 
 async def auto_refresh():
