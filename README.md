@@ -1,17 +1,15 @@
 # EdgeFinder
 
 A personal project for spotting good bets across sportsbooks. It pulls live odds
-for a handful of sports and checks two things:
+from a bunch of sports books, and finds Arbitrage and positive EV oppourtunities.
 
-- **Arbitrage** — a rare situation where the odds across different books
+- **Arbitrage** : a rare situation where the odds across different books
   disagree enough that you could bet on every outcome and come out ahead no
-  matter what happens.
-- **+EV bets** — bets where the odds a book is offering look better than what
+  matter what happens. Essentially the sum of all the implied probabilities of each possible outcome for a bet needs to be less than one. For example if the game you bet on is Raptors vs Lakers andone sports books puts Raptors at -110 (meaning bet $100 to win $210, implied probability 100/210) and Lakers at -120 (meaning bet $100 to win $220, implied probability 100/210) then there is an arbitrage oppourtunity as 100/210+100/220<1.
+- **+EV bets** : bets where the odds a book is offering look better than what
   the market as a whole thinks is fair, based on averaging odds across books.
 
-It's just something I built to poke at this idea, not a product or a service —
-no accounts, no money moves through it, it just reads public odds data and
-does some math on it.
+No money acctually moves through the app, it can only tell you what to bet on. Realisticaly it's not very practical as by the time you log into all the sportsbooks and place the bets, the arbitrage oppurtunity could be gone. Nonetheless, it is an interesting concept, and maybe in the future I'll try and make it possible for it to auto-place bets.
 
 ## How it's put together
 
