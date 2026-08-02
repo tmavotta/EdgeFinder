@@ -40,18 +40,17 @@ pip install fastapi uvicorn httpx python-dotenv
 uvicorn main:app --reload --port 8000
 ```
 
-And in a separate terminal, the frontend:
+And in a separate terminal start the frontend:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the local address it prints, and you're in.
+Open the local address it prints and you're in!
 
 ## Worth knowing
 
-- Odds APIs have limited free requests per month, so it refreshes every 90
-  seconds rather than constantly.
-- This is for learning and curiosity, not betting advice — always check the
+- Odds API's free tier only gives 500 requests per month, so the app refreshes every 90 secs instead of constantly. You can change this if you would like, there is a variable in `EdgeFinder.jsx` called REFRESH_INTERVAL that controls that.
+- This is for learning and curiosity, not betting advice, always check the
   numbers yourself before putting money on anything.
