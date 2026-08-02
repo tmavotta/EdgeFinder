@@ -1,8 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, ScatterChart, Scatter, Cell
-} from "recharts";
 
 const BACKEND = "http://localhost:8000";
 const REFRESH_INTERVAL = 90000;
@@ -19,19 +15,18 @@ const SPORTS_CONFIG = [
 ];
 const SPORT_LABEL = Object.fromEntries(SPORTS_CONFIG.map(s => [s.key, s.label]));
 
+// ─── Math (unchanged — this is the core model) ────────────────────────────
+
 function dtProb(d) { return 1 / d; }
 function toAmerican(d) {
   if (d >= 2) return `+${Math.round((d - 1) * 100)}`;
+  if (d <= 1) return "—";
   return `${Math.round(-100 / (d - 1))}`;
-}
-function kellyFraction(trueProb, decimalOdds, fraction = 0.25) {
-  const b = decimalOdds - 1, p = trueProb, q = 1 - p;
-  return Math.max(0, ((b * p - q) / b) * fraction);
 }
 function fmtPct(n, d = 2) { return `${(n * 100).toFixed(d)}%`; }
 function fmtDate(iso) {
   const diff = new Date(iso) - new Date();
-  if (diff < 0) return "LIVE";
+  if (diff < 0) return "Live";
   if (diff < 3600000) return `${Math.round(diff / 60000)}m`;
   if (diff < 86400000) return `${Math.round(diff / 3600000)}h`;
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -87,13 +82,12 @@ function computeEV(events, minEV = 0.01) {
         if (!tp) continue;
         const ev_val = tp / ip - 1;
         if (ev_val >= minEV) {
-          const kelly = kellyFraction(tp, out.price);
           bets.push({
             id: `${ev.id}-${bk.key}-${out.name}`, home: ev.home_team, away: ev.away_team,
             sport: SPORT_LABEL[ev.sport_key] || ev.sport_key, sportKey: ev.sport_key,
             outcome: out.name, book: bk.title, decimalOdds: out.price, americanOdds: toAmerican(out.price),
             impliedProb: ip, trueProb: tp, edge: tp - ip, ev: ev_val,
-            kellyPct: kelly * 100, time: ev.commence_time,
+            time: ev.commence_time,
           });
         }
       }
@@ -102,100 +96,118 @@ function computeEV(events, minEV = 0.01) {
   return bets.sort((a, b) => b.ev - a.ev).slice(0, 80);
 }
 
+// ─── Design tokens ─────────────────────────────────────────────────────────
+
 const C = {
-  bg: "#07090c", surface: "#0d1117", elevated: "#161b22", border: "#1c2128", borderHi: "#30363d",
-  green: "#3fb950", greenBright: "#56d364", amber: "#d29922", amberBright: "#e3b341",
-  red: "#f85149", blue: "#79c0ff", purple: "#d2a8ff", cyan: "#39d0d8",
-  text: "#c9d1d9", textDim: "#8b949e", textMuted: "#484f58", white: "#f0f6fc",
+  ink: "#0A0D13", panel: "#12161F", panel2: "#1A2130", line: "#212938", lineHi: "#31405A",
+  gold: "#E3B341", goldHi: "#F2C75C",
+  teal: "#2FD4C4", tealHi: "#5CE6D8",
+  rose: "#F2748C", slate: "#7C93C9", violet: "#A48CF0",
+  fg: "#F1EFEA", fgDim: "#B6BECF", fgMute: "#7C869C",
 };
-const MONO = "'JetBrains Mono', monospace";
-const DISPLAY = "'Barlow Condensed', sans-serif";
+// One warm, modern grotesk for everything; a mono face reserved for numeric
+// readouts where digit alignment actually matters (odds, percentages).
+const SANS = "'Manrope', sans-serif";
+const NUM = "'IBM Plex Mono', monospace";
+
+function Label({ children, style }) {
+  return <div style={{ fontSize: 13, fontWeight: 600, color: C.fgDim, marginBottom: 10, ...style }}>{children}</div>;
+}
+
+// ─── Small shared pieces ─────────────────────────────────────────────────────
+
+function CaliperMark({ size = 20, color = C.gold }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M4 5v6M20 5v6" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <path d="M4 8h16" stroke={color} strokeWidth="2" strokeLinecap="round" strokeDasharray="1 3.4" />
+      <path d="M8 15l-3 4M16 15l3 4" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function Pill({ color, children, small }) {
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", background: color + "18", color,
-      border: `1px solid ${color}35`, borderRadius: 4, padding: small ? "0 5px" : "2px 7px",
-      fontSize: small ? 10 : 11, fontWeight: 700, letterSpacing: "0.06em", fontFamily: MONO, lineHeight: 1.6, whiteSpace: "nowrap",
+      display: "inline-flex", alignItems: "center", background: color + "16", color,
+      border: `1px solid ${color}38`, borderRadius: 6, padding: small ? "2px 8px" : "3px 9px",
+      fontSize: small ? 11 : 12, fontWeight: 600, lineHeight: 1.6, whiteSpace: "nowrap",
     }}>{children}</span>
   );
 }
 
-function StatCard({ label, value, color }) {
+function StatCard({ label, value, color, sub }) {
   return (
-    <div style={{ flex: 1, background: C.surface, borderRadius: 8, padding: "10px 12px", border: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: "0.14em", marginBottom: 5, fontFamily: MONO }}>{label}</div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: color || C.white, fontFamily: MONO, lineHeight: 1 }}>{value}</div>
+    <div style={{ flex: 1, minWidth: 130, background: C.panel, borderRadius: 12, padding: "16px 18px", border: `1px solid ${C.line}` }}>
+      <div style={{ fontSize: 13, color: C.fgDim, fontWeight: 500, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: color || C.fg, fontFamily: NUM, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: C.fgMute, marginTop: 6 }}>{sub}</div>}
     </div>
   );
 }
 
-function KellyBar({ kellyPct, color }) {
+function EmptyState({ icon, title, msg }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.textDim, marginBottom: 3, fontFamily: MONO }}>
-        <span>Kelly (25% fractional)</span>
-        <span style={{ color }}>{kellyPct.toFixed(2)}% of bankroll</span>
-      </div>
-      <div style={{ height: 4, background: C.elevated, borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${Math.min((kellyPct / 15) * 100, 100)}%`, background: color, borderRadius: 3 }} />
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.textMuted, marginTop: 3, fontFamily: MONO }}>
-        <span>$100 → <span style={{ color }}>${kellyPct.toFixed(2)}</span></span>
-        <span>$1k → <span style={{ color }}>${(kellyPct * 10).toFixed(2)}</span></span>
-        <span>$5k → <span style={{ color }}>${(kellyPct * 50).toFixed(2)}</span></span>
-      </div>
+    <div style={{ textAlign: "center", padding: "56px 24px", color: C.fgDim, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+      <div style={{ marginBottom: 16, display: "flex", justifyContent: "center", opacity: 0.6 }}>{icon}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: C.fg, marginBottom: 7 }}>{title}</div>
+      <div style={{ fontSize: 14, lineHeight: 1.6, maxWidth: 340, margin: "0 auto", color: C.fgDim }}>{msg}</div>
     </div>
   );
 }
+
+// ─── Cards ────────────────────────────────────────────────────────────────
 
 function ArbCard({ arb }) {
   const [open, setOpen] = useState(false);
-  const col = arb.profitPct >= 3 ? C.greenBright : arb.profitPct >= 1 ? C.green : C.amber;
+  const col = arb.profitPct >= 3 ? C.goldHi : arb.profitPct >= 1 ? C.gold : C.slate;
   return (
-    <div onClick={() => setOpen(!open)} style={{ background: C.surface, border: `1px solid ${col}35`, borderRadius: 10, marginBottom: 10, cursor: "pointer", overflow: "hidden" }}>
-      <div style={{ padding: "13px 14px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+    <div onClick={() => setOpen(!open)} style={{
+      background: C.panel, border: `1px solid ${col}30`, borderRadius: 14, cursor: "pointer",
+      overflow: "hidden", transition: "border-color 120ms ease",
+    }}>
+      <div style={{ padding: "18px 20px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: C.white, lineHeight: 1.3, marginBottom: 5 }}>
-              {arb.home} <span style={{ color: C.textMuted, fontWeight: 400 }}>vs</span> {arb.away}
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.fg, lineHeight: 1.3, marginBottom: 8 }}>
+              {arb.home} <span style={{ color: C.fgMute, fontWeight: 500 }}>vs</span> {arb.away}
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              <Pill color={C.blue}>{arb.sport}</Pill>
-              <Pill color={C.textDim} small>{fmtDate(arb.time)}</Pill>
-              <Pill color={C.textMuted} small>{arb.bookCount} books</Pill>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <Pill color={C.slate}>{arb.sport}</Pill>
+              <Pill color={C.fgDim} small>{fmtDate(arb.time)}</Pill>
+              <Pill color={C.fgMute} small>{arb.bookCount} books</Pill>
             </div>
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ fontSize: 24, fontWeight: 700, color: col, fontFamily: MONO, lineHeight: 1 }}>+{arb.profitPct.toFixed(2)}%</div>
-            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 3, letterSpacing: "0.1em" }}>PROFIT</div>
+            <div style={{ fontSize: 27, fontWeight: 700, color: col, fontFamily: NUM, lineHeight: 1 }}>+{arb.profitPct.toFixed(2)}%</div>
+            <div style={{ fontSize: 12, color: C.fgMute, marginTop: 5 }}>profit</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           {arb.outcomes.map(o => (
-            <div key={o.name} style={{ background: C.elevated, border: `1px solid ${C.borderHi}`, borderRadius: 7, padding: "7px 11px", flex: 1, minWidth: 100 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.white, marginBottom: 2 }}>{o.name}</div>
-              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>{o.book}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: col, fontFamily: MONO }}>{toAmerican(o.odds)}</div>
-              <div style={{ fontSize: 10, color: C.textMuted, fontFamily: MONO }}>{fmtPct(o.prob)} imp</div>
+            <div key={o.name} style={{ background: C.panel2, border: `1px solid ${C.lineHi}`, borderRadius: 10, padding: "9px 13px", flex: 1, minWidth: 110 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.fg, marginBottom: 3 }}>{o.name}</div>
+              <div style={{ fontSize: 12, color: C.fgDim, marginBottom: 6 }}>{o.book}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: col, fontFamily: NUM }}>{toAmerican(o.odds)}</div>
+              <div style={{ fontSize: 11, color: C.fgMute, fontFamily: NUM }}>{fmtPct(o.prob)} implied</div>
             </div>
           ))}
         </div>
       </div>
       {open && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "13px 14px", background: C.elevated }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.14em", color: C.textMuted, marginBottom: 10, fontFamily: MONO }}>OPTIMAL STAKES — $100 TOTAL</div>
+        <div style={{ borderTop: `1px solid ${C.line}`, padding: "16px 20px", background: C.panel2 }}>
+          <Label style={{ marginBottom: 12 }}>Optimal stakes · $100 total</Label>
           {arb.outcomes.map(s => (
-            <div key={s.name} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
-              <span style={{ fontWeight: 600, color: C.text }}>{s.name}</span>
-              <div style={{ fontFamily: MONO, display: "flex", gap: 10 }}>
-                <span style={{ color: C.amber }}>${s.stake}</span>
-                <span style={{ color: C.textMuted }}>→</span>
+            <div key={s.name} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14 }}>
+              <span style={{ fontWeight: 600, color: C.fg }}>{s.name}</span>
+              <div style={{ fontFamily: NUM, display: "flex", gap: 10 }}>
+                <span style={{ color: C.fgDim }}>${s.stake}</span>
+                <span style={{ color: C.fgMute }}>→</span>
                 <span style={{ color: col }}>${s.payout}</span>
               </div>
             </div>
           ))}
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 11, fontFamily: MONO, color: C.textDim }}>
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}`, fontSize: 13, fontFamily: NUM, color: C.fgDim }}>
             Sum: {fmtPct(arb.sumProbs)} · <span style={{ color: col }}>Margin: {fmtPct(1 - arb.sumProbs)}</span>
           </div>
         </div>
@@ -205,184 +217,45 @@ function ArbCard({ arb }) {
 }
 
 function EVCard({ bet }) {
-  const col = bet.ev >= 0.06 ? C.greenBright : bet.ev >= 0.03 ? C.green : C.amber;
+  const col = bet.ev >= 0.06 ? C.tealHi : bet.ev >= 0.03 ? C.teal : C.slate;
   return (
-    <div style={{ background: C.surface, borderLeft: `3px solid ${col}`, border: `1px solid ${col}28`, borderRadius: 8, marginBottom: 8, padding: "12px 14px" }}>
+    <div style={{ background: C.panel, borderLeft: `3px solid ${col}`, border: `1px solid ${col}26`, borderRadius: 12, padding: "16px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: col, marginBottom: 2 }}>{bet.outcome}</div>
-          <div style={{ fontSize: 12, color: C.textDim, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bet.home} vs {bet.away}</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            <Pill color={C.purple}>{bet.book}</Pill>
-            <Pill color={C.blue}>{bet.sport}</Pill>
-            <Pill color={C.textMuted} small>{fmtDate(bet.time)}</Pill>
+          <div style={{ fontSize: 16, fontWeight: 700, color: col, marginBottom: 4 }}>{bet.outcome}</div>
+          <div style={{ fontSize: 13, color: C.fgDim, marginBottom: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bet.home} vs {bet.away}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <Pill color={C.violet}>{bet.book}</Pill>
+            <Pill color={C.slate}>{bet.sport}</Pill>
+            <Pill color={C.fgMute} small>{fmtDate(bet.time)}</Pill>
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: C.white, fontFamily: MONO, lineHeight: 1 }}>{bet.americanOdds}</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: col, fontFamily: MONO, marginTop: 2 }}>+{(bet.ev * 100).toFixed(2)}% EV</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: C.fg, fontFamily: NUM, lineHeight: 1 }}>{bet.americanOdds}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: col, fontFamily: NUM, marginTop: 4 }}>+{(bet.ev * 100).toFixed(2)}% EV</div>
         </div>
       </div>
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.textDim, marginBottom: 4, fontFamily: MONO }}>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.fgDim, marginBottom: 6, fontFamily: NUM }}>
           <span>Implied {fmtPct(bet.impliedProb)}</span>
           <span style={{ color: col }}>True {fmtPct(bet.trueProb)} (+{fmtPct(bet.edge)})</span>
         </div>
-        <div style={{ position: "relative", height: 5, background: C.elevated, borderRadius: 3, overflow: "hidden" }}>
-          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${bet.impliedProb * 100}%`, background: C.textMuted, borderRadius: 3 }} />
-          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${bet.trueProb * 100}%`, background: col, borderRadius: 3, opacity: 0.85 }} />
+        <div style={{ position: "relative", height: 6, background: C.panel2, borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${bet.impliedProb * 100}%`, background: C.fgMute, borderRadius: 3 }} />
+          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${bet.trueProb * 100}%`, background: col, borderRadius: 3, opacity: 0.9 }} />
         </div>
       </div>
-      <KellyBar kellyPct={bet.kellyPct} color={col} />
     </div>
   );
 }
 
-function MarketRow({ event }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer" }} onClick={() => setOpen(!open)}>
-      <div style={{ padding: "11px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.white, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {event.home_team} <span style={{ color: C.textMuted }}>vs</span> {event.away_team}
-          </div>
-          <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
-            {SPORT_LABEL[event.sport_key] || event.sport_key} · {event.bookmakers?.length || 0} books · {fmtDate(event.commence_time)}
-          </div>
-        </div>
-        <span style={{ color: C.textMuted, fontSize: 14 }}>{open ? "▲" : "▼"}</span>
-      </div>
-      {open && event.bookmakers?.length > 0 && (
-        <div style={{ padding: "0 14px 14px" }}>
-          {event.bookmakers.slice(0, 8).map(bk => {
-            const mkt = bk.markets?.find(m => m.key === "h2h");
-            if (!mkt) return null;
-            return (
-              <div key={bk.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: C.elevated, borderRadius: 6, marginBottom: 5 }}>
-                <span style={{ fontSize: 12, color: C.textDim, flex: "0 0 90px" }}>{bk.title}</span>
-                <div style={{ display: "flex", gap: 12 }}>
-                  {mkt.outcomes.map(o => (
-                    <div key={o.name} style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: C.textMuted }}>{o.name.split(" ").pop()}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.white, fontFamily: MONO }}>{toAmerican(o.price)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChartsTab({ events, arbs, evBets }) {
-  const axisStyle = { fill: C.textDim, fontSize: 10, fontFamily: MONO };
-
-  const evBuckets = Array.from({ length: 12 }, (_, i) => ({
-    range: `${i}%`, count: evBets.filter(b => b.ev * 100 >= i && b.ev * 100 < i + 1).length,
-  })).filter(b => b.count > 0);
-
-  const bookMap = {};
-  evBets.forEach(b => { bookMap[b.book] = (bookMap[b.book] || 0) + 1; });
-  const bookData = Object.entries(bookMap)
-    .map(([book, count]) => ({ book: book.replace("DraftKings", "DK").replace("FanDuel", "FD").replace("BetMGM", "MGM").replace("PointsBet", "PB"), count }))
-    .sort((a, b) => b.count - a.count).slice(0, 8);
-
-  const sportMap = {};
-  events.forEach(e => { const k = SPORT_LABEL[e.sport_key] || e.sport_key; sportMap[k] = (sportMap[k] || 0) + 1; });
-  const sportData = Object.entries(sportMap).map(([sport, count]) => ({ sport, count })).sort((a, b) => b.count - a.count);
-
-  const scatterData = evBets.slice(0, 50).map(b => ({
-    x: parseFloat((b.impliedProb * 100).toFixed(1)),
-    y: parseFloat((b.trueProb * 100).toFixed(1)),
-    ev: b.ev,
-  }));
-
-  const ChartBox = ({ title, children, height = 160 }) => (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px", marginBottom: 12 }}>
-      <div style={{ fontSize: 11, letterSpacing: "0.1em", color: C.textMuted, marginBottom: 12, fontFamily: MONO }}>{title}</div>
-      <ResponsiveContainer width="100%" height={height}>{children}</ResponsiveContainer>
-    </div>
-  );
-
-  const NoData = () => <div style={{ color: C.textMuted, fontSize: 12, textAlign: "center", padding: 20, fontFamily: MONO }}>NO DATA YET</div>;
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <StatCard label="EVENTS" value={events.length} color={C.blue} />
-        <StatCard label="ARB OPPS" value={arbs.length} color={C.green} />
-        <StatCard label="+EV BETS" value={evBets.length} color={C.amber} />
-      </div>
-
-      {evBuckets.length > 0 ? (
-        <ChartBox title="EV DISTRIBUTION">
-          <BarChart data={evBuckets} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-            <XAxis dataKey="range" tick={axisStyle} />
-            <YAxis tick={axisStyle} />
-            <Tooltip contentStyle={{ background: C.elevated, border: `1px solid ${C.borderHi}`, borderRadius: 6, fontFamily: MONO, fontSize: 11 }} />
-            <Bar dataKey="count" name="bets" radius={[3, 3, 0, 0]}>
-              {evBuckets.map((_, i) => <Cell key={i} fill={i < 3 ? C.amber : i < 6 ? C.green : C.greenBright} />)}
-            </Bar>
-          </BarChart>
-        </ChartBox>
-      ) : <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 12 }}><div style={{ fontSize: 11, letterSpacing: "0.1em", color: C.textMuted, marginBottom: 12, fontFamily: MONO }}>EV DISTRIBUTION</div><NoData /></div>}
-
-      {bookData.length > 0 ? (
-        <ChartBox title="+EV OPPS BY BOOK" height={Math.max(bookData.length * 28, 100)}>
-          <BarChart data={bookData} layout="vertical" margin={{ top: 0, right: 20, bottom: 0, left: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
-            <XAxis type="number" tick={axisStyle} />
-            <YAxis type="category" dataKey="book" tick={{ ...axisStyle, fontSize: 10 }} width={36} />
-            <Tooltip contentStyle={{ background: C.elevated, border: `1px solid ${C.borderHi}`, borderRadius: 6, fontFamily: MONO, fontSize: 11 }} />
-            <Bar dataKey="count" name="opportunities" fill={C.purple} radius={[0, 3, 3, 0]} />
-          </BarChart>
-        </ChartBox>
-      ) : null}
-
-      {scatterData.length > 0 ? (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px", marginBottom: 12 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: C.textMuted, marginBottom: 4, fontFamily: MONO }}>IMPLIED vs TRUE PROBABILITY</div>
-          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 12, fontFamily: MONO }}>Points above diagonal = undervalued by book</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <ScatterChart margin={{ top: 10, right: 10, bottom: 20, left: -10 }}>
-              <CartesianGrid stroke={C.border} />
-              <XAxis type="number" dataKey="x" name="Implied %" domain={[0, 100]} tick={axisStyle} label={{ value: "Implied %", fill: C.textMuted, fontSize: 10, position: "insideBottom", offset: -10 }} />
-              <YAxis type="number" dataKey="y" name="True %" domain={[0, 100]} tick={axisStyle} label={{ value: "True %", fill: C.textMuted, fontSize: 10, angle: -90, position: "insideLeft", offset: 15 }} />
-              <Tooltip contentStyle={{ background: C.elevated, border: `1px solid ${C.borderHi}`, borderRadius: 6, fontFamily: MONO, fontSize: 11 }}
-                formatter={(val, name) => [val + "%", name]} />
-              <Scatter data={scatterData} name="bets">
-                {scatterData.map((d, i) => <Cell key={i} fill={d.ev > 0.05 ? C.greenBright : d.ev > 0.02 ? C.green : C.amber} />)}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-      ) : null}
-
-      {sportData.length > 0 ? (
-        <ChartBox title="EVENTS BY SPORT" height={120}>
-          <BarChart data={sportData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-            <XAxis dataKey="sport" tick={axisStyle} />
-            <YAxis tick={axisStyle} />
-            <Tooltip contentStyle={{ background: C.elevated, border: `1px solid ${C.borderHi}`, borderRadius: 6, fontFamily: MONO, fontSize: 11 }} />
-            <Bar dataKey="count" name="events" fill={C.blue} radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ChartBox>
-      ) : null}
-    </div>
-  );
-}
+// ─── App shell ────────────────────────────────────────────────────────────
 
 export default function EdgeFinder() {
   useEffect(() => {
     const el = document.createElement("link");
     el.rel = "stylesheet";
-    el.href = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap";
+    el.href = "https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap";
     document.head.appendChild(el);
   }, []);
 
@@ -396,7 +269,6 @@ export default function EdgeFinder() {
   const [remaining, setRemaining] = useState(null);
   const [fetchLog, setFetchLog] = useState([]);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL / 1000);
-  const [marketSearch, setMarketSearch] = useState("");
   const timerRef = useRef(null);
   const countdownRef = useRef(null);
 
@@ -444,196 +316,197 @@ export default function EdgeFinder() {
   const arbs = computeArbs(filtered);
   const evBets = computeEV(filtered, minEV);
   const availSports = [...new Set(events.map(e => e.sport_key))].filter(k => SPORT_LABEL[k]);
-  const filteredMarkets = filtered.filter(ev =>
-    !marketSearch || ev.home_team?.toLowerCase().includes(marketSearch.toLowerCase()) || ev.away_team?.toLowerCase().includes(marketSearch.toLowerCase())
-  );
 
-  const TABS = [
-    { id: "arb", label: "Arb", badge: arbs.length },
-    { id: "ev", label: "+EV", badge: evBets.length },
-    { id: "charts", label: "Charts" },
-    { id: "markets", label: "Markets", badge: filtered.length },
+  const NAV = [
+    { id: "arb", label: "Arbitrage", badge: arbs.length },
+    { id: "ev", label: "+EV Bets", badge: evBets.length },
     { id: "status", label: "Status" },
   ];
 
   if (loading) return (
-    <div style={{ fontFamily: DISPLAY, background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.text }}>
+    <div style={{ fontFamily: SANS, background: C.ink, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.fg }}>
       <style>{`@keyframes ef-p { 0%,100%{opacity:.15;transform:scale(.7)} 50%{opacity:1;transform:scale(1)} }`}</style>
-      <div style={{ marginBottom: 20, display: "flex", gap: 6 }}>
-        {[0, 0.15, 0.3].map((d, i) => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: C.green, animation: `ef-p 1.2s ease-in-out ${d}s infinite` }} />)}
+      <CaliperMark size={30} />
+      <div style={{ marginTop: 20, marginBottom: 16, display: "flex", gap: 7 }}>
+        {[0, 0.15, 0.3].map((d, i) => <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: C.gold, animation: `ef-p 1.2s ease-in-out ${d}s infinite` }} />)}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.white, letterSpacing: "0.08em" }}>LOADING MARKETS</div>
-      <div style={{ fontSize: 13, color: C.textDim, marginTop: 6 }}>Scanning {SPORTS_CONFIG.length} sports…</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: C.fg }}>Loading markets</div>
+      <div style={{ fontSize: 14, color: C.fgDim, marginTop: 6 }}>Scanning {SPORTS_CONFIG.length} sports…</div>
     </div>
   );
 
   return (
-    <div style={{ fontFamily: DISPLAY, background: C.bg, minHeight: "100vh", color: C.text, maxWidth: 520, margin: "0 auto" }}>
+    <div style={{ fontFamily: SANS, background: C.ink, minHeight: "100vh", color: C.fg, display: "flex" }}>
       <style>{`
         @keyframes ef-blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes ef-pulse { 0%,100%{opacity:.5;transform:scale(.9)} 50%{opacity:1;transform:scale(1.15)} }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        input[type=range] { accent-color: ${C.green}; width: 100%; }
-        ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-thumb { background: ${C.borderHi}; border-radius: 2px; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        input[type=range] { accent-color: ${C.gold}; width: 100%; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: ${C.lineHi}; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        .ef-navbtn:hover { background: ${C.panel2}; color: ${C.fg}; }
+        .ef-sportpill:hover { border-color: ${C.lineHi}; }
       `}</style>
 
-      <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "12px 14px", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: C.white, letterSpacing: "0.04em", lineHeight: 1 }}>⚡ EDGE<span style={{ color: C.green }}>FINDER</span></div>
-            <div style={{ fontSize: 11, color: C.textDim, marginTop: 3, fontFamily: MONO }}>
-              {events.length} events · {refreshing ? <span style={{ color: C.amber, animation: "ef-blink 1s infinite" }}>REFRESHING…</span> : <>refresh in <span style={{ color: C.green }}>{countdown}s</span></>}
-            </div>
+      {/* Sidebar */}
+      <div style={{ width: 240, flexShrink: 0, background: C.panel, borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh" }}>
+        <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${C.line}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <CaliperMark size={22} />
+            <div style={{ fontSize: 19, fontWeight: 800 }}>Edge<span style={{ color: C.gold }}>Finder</span></div>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "flex-end" }}>
-              <div style={{ width: 7, height: 7, borderRadius: "50%", background: refreshing ? C.amber : C.green, animation: "ef-pulse 2s infinite" }} />
-              <span style={{ fontSize: 11, color: C.textDim, letterSpacing: "0.08em" }}>BACKEND</span>
-            </div>
-            {remaining !== null && <div style={{ fontSize: 10, color: remaining < 50 ? C.red : C.textMuted, marginTop: 3, fontFamily: MONO }}>{remaining} req left</div>}
+          <div style={{ fontSize: 13, color: C.fgDim, marginTop: 9 }}>
+            {events.length} events · {refreshing
+              ? <span style={{ color: C.gold, animation: "ef-blink 1s infinite" }}>refreshing…</span>
+              : <>next in <span style={{ color: C.teal, fontFamily: NUM }}>{countdown}s</span></>}
           </div>
         </div>
-        {availSports.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto", paddingBottom: 2 }}>
-            {["all", ...availSports].map(sk => {
-              const isActive = sportFilter === sk;
-              const col = sk === "all" ? C.green : C.blue;
-              return (
-                <button key={sk} onClick={() => setSportFilter(sk)} style={{
-                  background: isActive ? col : C.elevated, color: isActive ? C.bg : C.textDim,
-                  border: `1px solid ${isActive ? col : C.border}`, borderRadius: 5, padding: "4px 10px",
-                  fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: DISPLAY, flexShrink: 0,
-                }}>{sk === "all" ? "ALL" : SPORT_LABEL[sk] || sk}</button>
-              );
-            })}
+
+        <div style={{ padding: "14px 12px", flex: 1, overflowY: "auto" }}>
+          {NAV.map(t => {
+            const isActive = tab === t.id;
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)} className="ef-navbtn" style={{
+                width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "10px 12px", marginBottom: 3, border: "none", borderRadius: 9, cursor: "pointer",
+                background: isActive ? C.panel2 : "transparent", color: isActive ? C.fg : C.fgDim,
+                fontSize: 15, fontWeight: 600, fontFamily: SANS, textAlign: "left",
+                borderLeft: `2px solid ${isActive ? C.gold : "transparent"}`, transition: "background 100ms ease",
+              }}>
+                <span>{t.label}</span>
+                {t.badge !== undefined && (
+                  <span style={{
+                    background: t.badge > 0 ? (isActive ? C.gold + "22" : C.panel2) : "transparent",
+                    color: t.badge > 0 ? C.gold : C.fgMute, borderRadius: 10, padding: "2px 8px", fontSize: 12, fontFamily: NUM,
+                  }}>{t.badge}</span>
+                )}
+              </button>
+            );
+          })}
+
+          {availSports.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontSize: 13, color: C.fgDim, fontWeight: 600, padding: "0 12px 10px" }}>Filter by sport</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 12px" }}>
+                {["all", ...availSports].map(sk => {
+                  const isActive = sportFilter === sk;
+                  const col = sk === "all" ? C.gold : C.slate;
+                  return (
+                    <button key={sk} onClick={() => setSportFilter(sk)} className="ef-sportpill" style={{
+                      background: isActive ? col : "transparent", color: isActive ? C.ink : C.fgDim,
+                      border: `1px solid ${isActive ? col : C.line}`, borderRadius: 7, padding: "5px 10px",
+                      fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: SANS,
+                    }}>{sk === "all" ? "All" : SPORT_LABEL[sk] || sk}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.line}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: remaining !== null ? 6 : 0 }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: refreshing ? C.gold : C.teal, animation: "ef-pulse 2s infinite" }} />
+            <span style={{ fontSize: 13, color: C.fgDim }}>Backend connected</span>
           </div>
-        )}
+          {remaining !== null && <div style={{ fontSize: 12, color: remaining < 50 ? C.rose : C.fgMute, fontFamily: NUM }}>{remaining} requests left</div>}
+        </div>
       </div>
 
-      <div style={{ display: "flex", background: C.surface, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>
-        {TABS.map(t => {
-          const isActive = tab === t.id;
-          return (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{
-              flex: 1, padding: "10px 4px", border: "none", borderBottom: `2px solid ${isActive ? C.green : "transparent"}`,
-              background: "transparent", color: isActive ? C.white : C.textDim,
-              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: DISPLAY,
-              letterSpacing: "0.05em", whiteSpace: "nowrap",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            }}>
-              {t.label}
-              {t.badge !== undefined && (
-                <span style={{ background: t.badge > 0 ? (isActive ? C.green : C.green + "25") : C.elevated, color: t.badge > 0 ? (isActive ? C.bg : C.green) : C.textMuted, borderRadius: 10, padding: "1px 5px", fontSize: 10, fontFamily: MONO }}>{t.badge}</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      <div style={{ padding: "12px 12px 80px" }}>
+      {/* Main content */}
+      <div style={{ flex: 1, minWidth: 0, padding: "28px 36px 60px", maxWidth: 1280 }}>
         {tab === "arb" && (
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <StatCard label="OPPS" value={arbs.length} color={arbs.length > 0 ? C.green : C.textDim} />
-              <StatCard label="BEST" value={arbs.length > 0 ? `+${arbs[0].profitPct.toFixed(2)}%` : "—"} color={C.greenBright} />
-              <StatCard label="AVG" value={arbs.length > 0 ? `+${(arbs.reduce((s, a) => s + a.profitPct, 0) / arbs.length).toFixed(2)}%` : "—"} color={C.amber} />
+            <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+              <StatCard label="Opportunities" value={arbs.length} color={arbs.length > 0 ? C.gold : C.fgDim} />
+              <StatCard label="Best margin" value={arbs.length > 0 ? `+${arbs[0].profitPct.toFixed(2)}%` : "—"} color={C.goldHi} />
+              <StatCard label="Average margin" value={arbs.length > 0 ? `+${(arbs.reduce((s, a) => s + a.profitPct, 0) / arbs.length).toFixed(2)}%` : "—"} color={C.slate} />
             </div>
             {arbs.length > 0
-              ? <>{<div style={{ fontSize: 11, color: C.textMuted, marginBottom: 10, fontFamily: MONO, letterSpacing: "0.06em" }}>TAP FOR STAKE CALCULATOR</div>}{arbs.map(a => <ArbCard key={a.id} arb={a} />)}</>
-              : <div style={{ textAlign: "center", padding: "50px 24px", color: C.textDim }}>
-                  <div style={{ fontSize: 36, marginBottom: 14, opacity: 0.5 }}>◎</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>No arbitrage detected</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.6 }}>Markets are efficient right now. Check +EV for softer edges.</div>
-                </div>
+              ? <>
+                  <div style={{ fontSize: 13, color: C.fgDim, marginBottom: 14 }}>Click a card for the stake calculator</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 14 }}>
+                    {arbs.map(a => <ArbCard key={a.id} arb={a} />)}
+                  </div>
+                </>
+              : <EmptyState icon={<CaliperMark size={32} color={C.fgMute} />} title="No arbitrage detected" msg="Markets are efficient right now. Check the +EV tab for softer edges." />
             }
           </div>
         )}
 
         {tab === "ev" && (
           <div>
-            <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 12, border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: C.textDim, letterSpacing: "0.1em", fontFamily: MONO }}>MIN EV THRESHOLD</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: MONO }}>+{(minEV * 100).toFixed(1)}%</span>
+            <div style={{ background: C.panel, borderRadius: 14, padding: "18px 20px", marginBottom: 20, border: `1px solid ${C.line}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 9 }}>
+                <span style={{ fontSize: 14, color: C.fgDim, fontWeight: 600 }}>Minimum EV threshold</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: C.teal, fontFamily: NUM }}>+{(minEV * 100).toFixed(1)}%</span>
               </div>
               <input type="range" min="0" max="0.12" step="0.005" value={minEV} onChange={e => setMinEV(parseFloat(e.target.value))} />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.textMuted, marginTop: 3, fontFamily: MONO }}>
-                <span>0% all</span><span>6%</span><span>12% strict</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.fgMute, marginTop: 5 }}>
+                <span>0% — all</span><span>6%</span><span>12% — strict</span>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <StatCard label="BETS FOUND" value={evBets.length} color={evBets.length > 0 ? C.green : C.textDim} />
-              <StatCard label="BEST EV" value={evBets.length > 0 ? `+${(evBets[0].ev * 100).toFixed(2)}%` : "—"} color={C.greenBright} />
-              <StatCard label="BOOKS" value={[...new Set(evBets.map(b => b.book))].length} color={C.purple} />
+            <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+              <StatCard label="Bets found" value={evBets.length} color={evBets.length > 0 ? C.teal : C.fgDim} />
+              <StatCard label="Best EV" value={evBets.length > 0 ? `+${(evBets[0].ev * 100).toFixed(2)}%` : "—"} color={C.tealHi} />
+              <StatCard label="Books represented" value={[...new Set(evBets.map(b => b.book))].length} color={C.violet} />
             </div>
-            {evBets.length > 0 ? evBets.map(b => <EVCard key={b.id} bet={b} />) : (
-              <div style={{ textAlign: "center", padding: "50px 24px", color: C.textDim }}>
-                <div style={{ fontSize: 36, marginBottom: 14, opacity: 0.5 }}>◈</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>No +EV bets at this threshold</div>
-                <div style={{ fontSize: 13 }}>Lower the threshold or wait for refresh.</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "charts" && <ChartsTab events={filtered} arbs={arbs} evBets={evBets} />}
-
-        {tab === "markets" && (
-          <div>
-            <input type="text" placeholder="Search teams…" value={marketSearch} onChange={e => setMarketSearch(e.target.value)}
-              style={{ width: "100%", padding: "9px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, color: C.text, fontSize: 14, fontFamily: DISPLAY, outline: "none", marginBottom: 10 }} />
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-              {filteredMarkets.slice(0, 60).map(ev => <MarketRow key={ev.id} event={ev} />)}
-            </div>
+            {evBets.length > 0
+              ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 14 }}>
+                  {evBets.map(b => <EVCard key={b.id} bet={b} />)}
+                </div>
+              : <EmptyState icon={<CaliperMark size={32} color={C.fgMute} />} title="No +EV bets at this threshold" msg="Lower the threshold above, or wait for the next refresh cycle." />
+            }
           </div>
         )}
 
         {tab === "status" && (
-          <div>
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px", marginBottom: 10 }}>
-              <div style={{ fontSize: 11, letterSpacing: "0.12em", color: C.textMuted, marginBottom: 10, fontFamily: MONO }}>SYSTEM</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div style={{ maxWidth: 720 }}>
+            <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+              <Label>System</Label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                 {[
-                  { l: "Status", v: refreshing ? "FETCHING" : "LIVE", c: refreshing ? C.amber : C.green },
-                  { l: "API Quota", v: remaining !== null ? `${remaining} left` : "—", c: remaining !== null && remaining < 50 ? C.red : C.text },
-                  { l: "Events", v: events.length, c: C.white },
-                  { l: "Sports", v: availSports.length, c: C.blue },
-                  { l: "Arb Opps", v: arbs.length, c: arbs.length > 0 ? C.green : C.textDim },
-                  { l: "Updated", v: lastUpdated ? lastUpdated.toLocaleTimeString() : "—", c: C.text },
+                  { l: "Status", v: refreshing ? "Fetching" : "Live", c: refreshing ? C.gold : C.teal },
+                  { l: "API quota", v: remaining !== null ? `${remaining} left` : "—", c: remaining !== null && remaining < 50 ? C.rose : C.fg },
+                  { l: "Events", v: events.length, c: C.fg },
+                  { l: "Sports", v: availSports.length, c: C.slate },
+                  { l: "Arb opps", v: arbs.length, c: arbs.length > 0 ? C.gold : C.fgDim },
+                  { l: "Updated", v: lastUpdated ? lastUpdated.toLocaleTimeString() : "—", c: C.fg },
                 ].map(s => (
-                  <div key={s.l} style={{ background: C.elevated, borderRadius: 7, padding: "10px 12px" }}>
-                    <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: "0.1em", fontFamily: MONO }}>{s.l}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: s.c, fontFamily: MONO, marginTop: 4 }}>{s.v}</div>
+                  <div key={s.l} style={{ background: C.panel2, borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 12, color: C.fgMute }}>{s.l}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: s.c, fontFamily: NUM, marginTop: 5 }}>{s.v}</div>
                   </div>
                 ))}
               </div>
             </div>
             {fetchLog.length > 0 && (
-              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px", marginBottom: 10 }}>
-                <div style={{ fontSize: 11, letterSpacing: "0.12em", color: C.textMuted, marginBottom: 10, fontFamily: MONO }}>DATA SOURCES</div>
+              <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: "20px", marginBottom: 16 }}>
+                <Label>Data sources</Label>
                 {fetchLog.map(log => (
-                  <div key={log.sport} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div key={log.sport} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 0", borderBottom: `1px solid ${C.line}` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: log.ok ? C.green : C.red, flexShrink: 0 }} />
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{log.sport}</span>
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: log.ok ? C.teal : C.rose, flexShrink: 0 }} />
+                      <span style={{ fontWeight: 600, fontSize: 15 }}>{log.sport}</span>
                     </div>
-                    <span style={{ fontSize: 12, color: log.ok ? C.textDim : C.red, fontFamily: MONO }}>{log.ok ? `${log.count} events` : (log.msg || "error").slice(0, 24)}</span>
+                    <span style={{ fontSize: 13, color: log.ok ? C.fgDim : C.rose, fontFamily: NUM }}>{log.ok ? `${log.count} events` : (log.msg || "error").slice(0, 40)}</span>
                   </div>
                 ))}
               </div>
             )}
             <button onClick={fetchAll} disabled={refreshing} style={{
-              width: "100%", padding: "14px", background: refreshing ? C.elevated : C.green,
-              color: refreshing ? C.textDim : C.bg, border: "none", borderRadius: 8,
-              fontSize: 16, fontWeight: 900, cursor: refreshing ? "not-allowed" : "pointer",
-              fontFamily: DISPLAY, letterSpacing: "0.1em",
-            }}>{refreshing ? "SCANNING MARKETS…" : "⟳ REFRESH NOW"}</button>
-            <div style={{ marginTop: 12, padding: "12px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }}>
-              <div style={{ fontSize: 10, color: C.textMuted, fontFamily: MONO, lineHeight: 1.9 }}>
-                KELLY CRITERION: Full Kelly = (bp−q)/b · 25% fractional applied to reduce variance{"\n"}
-                ARBITRAGE: sumProbs {"<"} 1 across best odds per book{"\n"}
-                EV: (trueProb / impliedProb) − 1 vs devigged consensus{"\n\n"}
-                ⚠ Educational purposes only. Verify before betting.
+              width: "100%", padding: "14px", background: refreshing ? C.panel2 : C.gold,
+              color: refreshing ? C.fgDim : C.ink, border: "none", borderRadius: 10,
+              fontSize: 15, fontWeight: 700, cursor: refreshing ? "not-allowed" : "pointer",
+              fontFamily: SANS,
+            }}>{refreshing ? "Scanning markets…" : "Refresh now"}</button>
+            <div style={{ marginTop: 16, padding: "16px 18px", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12 }}>
+              <div style={{ fontSize: 13, color: C.fgDim, lineHeight: 2 }}>
+                Arbitrage — sum of implied probabilities {"<"} 1 across best odds per book{"\n"}
+                EV — (true probability / implied probability) − 1, vs. devigged consensus{"\n\n"}
+                Educational purposes only. Verify before betting.
               </div>
             </div>
           </div>
