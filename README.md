@@ -9,7 +9,7 @@ from a bunch of sports books, and finds Arbitrage and positive EV opportunities.
 - **+EV bets** : bets where the odds a book is offering look better than what
   the market as a whole thinks is fair, based on averaging odds across books.
 
-No money acctually moves through the app, it can only tell you what to bet on. Realistically it's not very practical as by the time you log into all the sportsbooks and place the bets, the arbitrage opportunity could be gone. Nonetheless, it is an interesting concept, and maybe in the future I'll try and make it possible for it to auto-place bets.
+No money actually moves through the app, it can only tell you what to bet on. Realistically it's not very practical as by the time you log into all the sportsbooks and place the bets, the arbitrage opportunity could be gone. Nonetheless, it is an interesting concept, and maybe in the future I'll try and make it possible for it to auto-place bets.
 
 ## How it's put together
 
