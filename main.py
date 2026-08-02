@@ -5,11 +5,9 @@ Run with: uvicorn main:app --reload --port 8000
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import httpx
 import sqlite3
 import json
-import time
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional
