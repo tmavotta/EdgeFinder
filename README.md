@@ -5,7 +5,7 @@ from a bunch of sports books, and finds Arbitrage and positive EV oppourtunities
 
 - **Arbitrage** : a rare situation where the odds across different books
   disagree enough that you could bet on every outcome and come out ahead no
-  matter what happens. Essentially the sum of all the implied probabilities of each possible outcome for a bet needs to be less than one. For example if the game you bet on is Raptors vs Lakers andone sports books puts Raptors at -110 (meaning bet $100 to win $210, implied probability 100/210) and Lakers at -120 (meaning bet $100 to win $220, implied probability 100/210) then there is an arbitrage oppourtunity as 100/210+100/220<1.
+  matter what happens. Essentially the sum of all the implied probabilities of each possible outcome for a bet needs to be less than one. For example if the game you bet on is Raptors vs Lakers andone sports books puts Raptors at +110 (meaning bet $100 to win $210, implied probability 100/210) and Lakers at +120 (meaning bet $100 to win $220, implied probability 100/210) then there is an arbitrage oppourtunity as 100/210+100/220<1.
 - **+EV bets** : bets where the odds a book is offering look better than what
   the market as a whole thinks is fair, based on averaging odds across books.
 
@@ -15,10 +15,10 @@ No money acctually moves through the app, it can only tell you what to bet on. R
 
 Two pieces that run separately:
 
-- **Backend** (`main.py`) — a small Python server that fetches odds from
+- **Backend** (`main.py`): a Python server that fetches odds from
   [The Odds API](https://the-odds-api.com/), does the arbitrage/EV math, and
   keeps a local history in a SQLite file.
-- **Frontend** (`src/`) — a dashboard that talks to the backend and shows
+- **Frontend** (`src/`): a dashboard that talks to the backend and shows
   everything: current opportunities, a threshold slider for +EV bets, and a
   status page showing what's being fetched.
 
